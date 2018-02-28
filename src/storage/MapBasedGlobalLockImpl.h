@@ -44,18 +44,14 @@ namespace Afina {
 
         class MapBasedGlobalLockImpl : public Afina::Storage {
 
-            const size_t STANDART_MAX_SIZE =  1024;
-
         public:
-            MapBasedGlobalLockImpl(size_t max_size = STANDART_MAX_SIZE) :
+            MapBasedGlobalLockImpl(size_t max_size = 1024) :
                     _max_size(max_size),
                     _size(0)
             {
                 init_list();
             }
             ~MapBasedGlobalLockImpl()
-                    :_max_size(STANDART_MAX_SIZE),
-                     _size(0)
             {
                 init_list();
             }
