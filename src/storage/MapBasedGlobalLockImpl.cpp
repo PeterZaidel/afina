@@ -5,10 +5,14 @@
 namespace Afina {
 namespace Backend {
 
-void MapBasedGlobalLockImpl::to_head(entry* entry) const {
-        std::unique_lock lock(mutex);
-        entry->_prev->_next = entry->_next;
-        entry->_next->_prev = entry->_prev;
+void MapBasedGlobalLockImpl::to_head(entry* entry) const
+{
+        std::unique_lock<std::recursive_mutex> lock(mutex);
+        if(entry->_prev != nullptr)
+             entry->_prev->_next = entry->_next;
+
+        if(entry->_next != nullptr)
+             entry->_next->_prev = entry->_prev;
 
         _head->_prev->_next = entry;
         entry -> _prev = _head->_prev;
@@ -20,7 +24,7 @@ void MapBasedGlobalLockImpl::to_head(entry* entry) const {
 // See MapBasedGlobalLockImpl.h
 bool MapBasedGlobalLockImpl::Put(const std::string &key, const std::string &value)
     {
-        std::unique_lock lock(mutex);
+        std::unique_lock<std::recursive_mutex> lock(mutex);
 
         if(_backend.count(key)) {
             entry *entry = _backend[key];
@@ -30,7 +34,9 @@ bool MapBasedGlobalLockImpl::Put(const std::string &key, const std::string &valu
         }
 
        entry* new_entry = new entry(key, value);
-       if(_size >= _max_size && _tail != nullptr)
+       _backend[new_entry->_key] = new_entry;
+
+       if(_size >= _max_size && _tail->_next != nullptr)
        {
            entry* new_tail = _tail->_next -> _next;
            _backend.erase(_tail->_next ->_key);
@@ -38,16 +44,12 @@ bool MapBasedGlobalLockImpl::Put(const std::string &key, const std::string &valu
            new_tail->_prev = _tail;
            _tail->_next = new_tail;
 
-
            to_head(new_entry);
            return true;
        }
 
 
-        new_entry->_prev = _head;
-        _head -> _next = new_entry;
-        _head = new_entry;
-        _backend[new_entry->_key] = new_entry;
+        to_head(new_entry);
         _size++;
 
         return true;
@@ -56,7 +58,7 @@ bool MapBasedGlobalLockImpl::Put(const std::string &key, const std::string &valu
 // See MapBasedGlobalLockImpl.h
 bool MapBasedGlobalLockImpl::PutIfAbsent(const std::string &key, const std::string &value)
     {
-        std::unique_lock lock(mutex);
+        std::unique_lock<std::recursive_mutex> lock(mutex);
         if(_backend.count(key)) {
             return false;
         }
@@ -67,7 +69,7 @@ bool MapBasedGlobalLockImpl::PutIfAbsent(const std::string &key, const std::stri
 // See MapBasedGlobalLockImpl.h
 bool MapBasedGlobalLockImpl::Set(const std::string &key, const std::string &value)
     {
-        std::unique_lock lock(mutex);
+        std::unique_lock<std::recursive_mutex> lock(mutex);
         if(_backend.count(key))
         {
             _backend[key]->_data = value;
@@ -80,7 +82,7 @@ bool MapBasedGlobalLockImpl::Set(const std::string &key, const std::string &valu
 // See MapBasedGlobalLockImpl.h
 bool MapBasedGlobalLockImpl::Delete(const std::string &key)
     {
-        std::unique_lock lock(mutex);
+        std::unique_lock<std::recursive_mutex> lock(mutex);
         if(_backend.count(key))
         {
             entry* entry_delete = _backend[key];
@@ -97,11 +99,11 @@ bool MapBasedGlobalLockImpl::Delete(const std::string &key)
 // See MapBasedGlobalLockImpl.h
 bool MapBasedGlobalLockImpl::Get(const std::string &key, std::string &value) const
     {
-        std::unique_lock lock(mutex);
+        std::unique_lock<std::recursive_mutex> lock(mutex);
         if(_backend.count(key))
         {
-            to_head(_backend[key]);
-            value =  _backend[key]->_data;
+            to_head(_backend.at(key));
+            value =  _backend.at(key)->_data;
             return true;
         }
         return false;

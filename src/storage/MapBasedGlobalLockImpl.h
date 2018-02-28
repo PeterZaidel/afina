@@ -37,7 +37,6 @@ namespace Afina {
                     :_key(""),
                      _data(""),
                      _prev(nullptr),
-                     _prev(nullptr),
                      _next(nullptr)
             {}
 
@@ -79,7 +78,7 @@ namespace Afina {
             mutable size_t _size;
             std::unordered_map<std::string, entry*> _backend;
 
-            std::recursive_mutex mutex;
+            mutable std::recursive_mutex mutex;
 
             void to_head(entry* entry) const;
             void init_list() const

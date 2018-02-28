@@ -98,7 +98,8 @@ TEST(StorageTest, MaxTest) {
         ss.str("");
         storage.Put(key, val);
     }
-    
+
+
     for(long i=100; i<1100; ++i)
     {
         ss << "Key" << i;
