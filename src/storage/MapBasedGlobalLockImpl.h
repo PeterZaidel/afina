@@ -53,7 +53,9 @@ namespace Afina {
             }
             ~MapBasedGlobalLockImpl()
             {
-                init_list();
+                // delete only entries not in hash_map
+                delete _head;
+                delete _tail;
             }
 
             // Implements Afina::Storage interface
