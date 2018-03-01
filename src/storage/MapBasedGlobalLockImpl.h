@@ -22,10 +22,9 @@ namespace Afina {
             entry* _next;
             entry* _prev;
             std::string _data;
-            std::string _key;
+            std::unordered_map<std::string, entry*>::iterator it;
 
-            entry(std::string key, std::string data, entry* prev = nullptr, entry* next = nullptr)
-                    :_key(key),
+            entry(std::string key, std::string data, entry* prev = nullptr, entry* next = nullptr):
                      _data(data),
                      _prev(prev),
                      _next(next)
@@ -33,8 +32,7 @@ namespace Afina {
 
             }
 
-            entry()
-                    :_key(""),
+            entry():
                      _data(""),
                      _prev(nullptr),
                      _next(nullptr)
@@ -54,8 +52,16 @@ namespace Afina {
             ~MapBasedGlobalLockImpl()
             {
                 // delete only entries not in hash_map
-                delete _head;
-                delete _tail;
+
+                entry* cur_ptr = _tail;
+                entry* next_ptr = _tail->_next;
+                while (next_ptr != nullptr)
+                {
+                    delete cur_ptr;
+                    cur_ptr = next_ptr;
+                    next_ptr = cur_ptr->_next;
+                }
+
             }
 
             // Implements Afina::Storage interface

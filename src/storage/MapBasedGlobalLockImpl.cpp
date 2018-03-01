@@ -26,7 +26,10 @@ bool MapBasedGlobalLockImpl::Put(const std::string &key, const std::string &valu
     {
         std::unique_lock<std::recursive_mutex> lock(mutex);
 
-        if(_backend.count(key)) {
+        size_t new_entry_size = key.size() + value.size();
+
+        if(_backend.count(key))
+        {
             entry *entry = _backend[key];
             entry->_data = value;
             to_head(entry);
@@ -34,12 +37,15 @@ bool MapBasedGlobalLockImpl::Put(const std::string &key, const std::string &valu
         }
 
        entry* new_entry = new entry(key, value);
-       _backend[new_entry->_key] = new_entry;
+       _backend[key] = new_entry;
+        new_entry->it = _backend.find(key);
+
 
        if(_size >= _max_size && _tail->_next != nullptr)
        {
            entry* new_tail = _tail->_next -> _next;
-           _backend.erase(_tail->_next ->_key);
+           _backend.erase(_tail->_next ->it->first);
+           delete _tail->_next;
 
            new_tail->_prev = _tail;
            _tail->_next = new_tail;
@@ -89,7 +95,7 @@ bool MapBasedGlobalLockImpl::Delete(const std::string &key)
             entry_delete->_prev->_next = entry_delete->_next;
             entry_delete->_next->_prev=entry_delete->_prev;
 
-            _backend.erase(entry_delete->_key);
+            _backend.erase(entry_delete->it->first);
             _size--;
             return true;
         }
