@@ -69,7 +69,6 @@ namespace Afina {
             ~MapBasedGlobalLockImpl()
             {
                 // delete only entries not in hash_map
-
                 delete _head;
                 delete _tail;
             }
