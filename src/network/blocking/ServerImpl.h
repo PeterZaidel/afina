@@ -9,6 +9,7 @@
 #include <afina/execute/Command.h>
 
 #include <afina/network/Server.h>
+#include <protocol/Parser.h>
 
 namespace Afina {
 namespace Network {
@@ -55,6 +56,8 @@ private:
 
     static void *RunAcceptorProxy(void *p);
 
+    bool parse_commands(int client_socket,  std::string& current_data, Afina::Protocol::Parser& parser);
+
     const int buffer_read_size= 1024;
     const std::string end_of_msg = "\r\n";
 
@@ -89,7 +92,6 @@ private:
     // access only from inside of accept_thread
     std::unordered_set<pthread_t> connections;
 
-    std::deque<pthread_t> tasks;
 };
 
 } // namespace Blocking

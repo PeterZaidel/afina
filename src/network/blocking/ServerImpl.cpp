@@ -92,10 +92,9 @@ void ServerImpl::Start(uint32_t port, uint16_t n_workers) {
 // See Server.h
 void ServerImpl::Stop() {
     std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
-
-        Join();
-
     running.store(false);
+    Join();
+
 }
 
 // See Server.h
@@ -189,6 +188,8 @@ void ServerImpl::RunAcceptor() {
 
         // TODO: Start new thread and process data from/to connection
 
+        std::unique_lock<std::mutex> lock(connections_mutex);
+
         if(connections.size() >= max_workers)
         {
             close(client_socket);
@@ -203,7 +204,11 @@ void ServerImpl::RunAcceptor() {
             throw std::runtime_error("Socket send() failed");
         }
 
+        pthread_detach(new_thread);
+
         connections.insert(new_thread);
+
+        lock.unlock();
     }
 
     // Cleanup on exit...
@@ -224,6 +229,81 @@ void ServerImpl::RunAcceptor() {
     }
 
 
+    bool ServerImpl::parse_commands(int client_socket, std::string& current_data, Afina::Protocol::Parser& parser)
+    {
+        auto new_data = new char[buffer_read_size];
+        while (!current_data.empty())
+        {
+            size_t parsed = 0;
+            bool command_flag = false;
+            try
+            {
+                command_flag = parser.Parse(current_data, parsed);
+            }
+            catch (std::exception &e)
+            {
+                std::string error_msg = "Parsing error: ";
+                error_msg += e.what();
+                error_msg += end_of_msg;
+                send(client_socket, error_msg.c_str(), error_msg.size(), 0);
+                current_data = "";
+                parser.Reset();
+
+                // не получается распарсить команду, необходимо прочитать больше данных
+                return false;
+            }
+
+            current_data = current_data.substr(parsed);
+            if (!command_flag) {
+                //не смогл прочитать команду до конца, читаем дальше
+                return false;
+            }
+
+
+            uint32_t arguments_data_size = 0;
+            auto command = parser.Build(arguments_data_size);
+
+            if (arguments_data_size != 0) {
+                arguments_data_size += end_of_msg.size();
+            }
+
+            if (arguments_data_size > current_data.size()) {
+                if (recv(client_socket, new_data, (arguments_data_size) * sizeof(char), MSG_WAITALL) <= 0) {
+                    // не получается прочитать аргументы для команды
+                    throw std::exception();
+                }
+                current_data.append(new_data);
+            }
+
+            std::string argument;
+            if (arguments_data_size > end_of_msg.size()) {
+                argument = current_data.substr(0, arguments_data_size - end_of_msg.size()); // \r\n not needed
+                current_data = current_data.substr(arguments_data_size); //remove argument from received data
+            }
+
+            std::string out;
+            try
+            {
+                command->Execute(*pStorage, argument, out);
+            }
+            catch (std::exception &e) {
+                out = "SERVER ERROR ";
+                out += e.what();
+            }
+
+            out += end_of_msg;
+
+            if (send(client_socket, out.c_str(), out.size(), 0) < out.size())
+            {
+                // не получается писать в сокет, закрываем соединение
+                throw std::exception();
+            }
+
+            parser.Reset();
+
+        }
+        return true;
+    }
 
     // See Server.h
     void ServerImpl::RunConnection(int client_socket)
@@ -233,11 +313,12 @@ void ServerImpl::RunAcceptor() {
 
         std::string current_data;
         auto new_data = new char[buffer_read_size];
+        bool parse_result = false;
 
         while (running.load())
         {
-            if (recv(client_socket, new_data, buffer_read_size * sizeof(char), 0) <= 0
-                && current_data.size() == 0)
+            // обработка последовательности комманд реализовать в цикле
+            if (recv(client_socket, new_data, buffer_read_size * sizeof(char), 0) <= 0)
             {
                 break;
             }
@@ -245,69 +326,15 @@ void ServerImpl::RunAcceptor() {
             current_data.append(new_data);
             memset(new_data, 0, buffer_read_size *sizeof(char));
 
-            size_t parsed = 0;
-            bool command_flag = false;
             try
             {
-                command_flag = parser.Parse(current_data, parsed);
+                parse_result = parse_commands(client_socket, current_data, parser);
             }
-            catch(std::exception& e)
+            catch (std::exception& e )
             {
-                std::string error_msg = "Parsing error: ";
-                error_msg += e.what();
-                error_msg += end_of_msg;
-                send(client_socket, error_msg.c_str(), error_msg.size(), 0);
-                current_data = "";
-                parser.Reset();
-                continue;
-            }
-
-            current_data = current_data.substr(parsed);
-            if (!command_flag)
-            {
-                continue;
-            }
-
-
-            uint32_t arguments_data_size = 0;
-            auto command = parser.Build(arguments_data_size);
-
-            if (arguments_data_size != 0)
-            {
-                arguments_data_size += end_of_msg.size();
-            }
-
-            if (arguments_data_size > current_data.size())
-            {
-                if (recv(client_socket, new_data, (arguments_data_size) * sizeof(char), MSG_WAITALL) <= 0) {
-                    break;
-                }
-                current_data.append(new_data);
-            }
-
-            std::string argument;
-            if (arguments_data_size > end_of_msg.size()) {
-                argument = current_data.substr(0, arguments_data_size-end_of_msg.size()); // \r\n not needed
-                current_data = current_data.substr(arguments_data_size); //remove argument from received data
-            }
-
-            std::string out;
-            try
-            {
-                command->Execute(*pStorage, argument, out);
-            }
-            catch(std::exception& e) {
-                out = "SERVER ERROR ";
-                out += e.what();
-            }
-
-            out += end_of_msg;
-
-            if (send(client_socket, out.c_str(), out.size(), 0) < out.size()) {
                 break;
             }
 
-            parser.Reset();
         }
 
         close(client_socket);
