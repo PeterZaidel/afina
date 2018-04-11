@@ -18,6 +18,8 @@
 #include <unistd.h>
 
 #include <afina/Storage.h>
+#include <protocol/Parser.h>
+#include <sstream>
 
 namespace Afina {
 namespace Network {
@@ -90,14 +92,29 @@ void ServerImpl::Start(uint32_t port, uint16_t n_workers) {
 // See Server.h
 void ServerImpl::Stop() {
     std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
+
+        Join();
+
     running.store(false);
 }
 
 // See Server.h
 void ServerImpl::Join() {
     std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
+
+    std::unique_lock<std::mutex> lock(connections_mutex);
+
     pthread_join(accept_thread, 0);
+
+    for (auto&& thread : connections)
+    {
+        pthread_join(thread, 0);
+    }
+
+    connections.clear();
+
 }
+
 
 // See Server.h
 void ServerImpl::RunAcceptor() {
@@ -171,26 +188,130 @@ void ServerImpl::RunAcceptor() {
         }
 
         // TODO: Start new thread and process data from/to connection
+
+        if(connections.size() >= max_workers)
         {
-            std::string msg = "TODO: start new thread and process memcached protocol instead";
-            if (send(client_socket, msg.data(), msg.size(), 0) <= 0) {
-                close(client_socket);
-                close(server_socket);
-                throw std::runtime_error("Socket send() failed");
-            }
             close(client_socket);
         }
+
+        pthread_t new_thread;
+        ServerImpl::ProxyArgs args = {this, client_socket};
+
+        if(pthread_create(&new_thread, nullptr, RunConnectionProxy, &args) != 0)
+        {
+            close(client_socket);
+            throw std::runtime_error("Socket send() failed");
+        }
+
+        connections.insert(new_thread);
     }
 
     // Cleanup on exit...
+
     close(server_socket);
 }
 
-// See Server.h
-void ServerImpl::RunConnection() {
-    std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
-    // TODO: All connection work is here
-}
+
+    void* ServerImpl::RunConnectionProxy(void *proxy_args) {
+        std::cout<< "RunConnectionProxy"<<std::endl;
+        auto args = reinterpret_cast<ServerImpl::ProxyArgs*>(proxy_args);
+        try{
+            args->server->RunConnection(args->con_socket);
+        } catch (std::runtime_error &ex) {
+            std::cerr << "Connection fails: " << ex.what() << std::endl;
+        }
+        return nullptr;
+    }
+
+
+
+    // See Server.h
+    void ServerImpl::RunConnection(int client_socket)
+    {
+        std::cout<< "RunConnection"<<std::endl;
+        Afina::Protocol::Parser parser;
+
+        std::string current_data;
+        auto new_data = new char[buffer_read_size];
+
+        while (running.load())
+        {
+            if (recv(client_socket, new_data, buffer_read_size * sizeof(char), 0) <= 0
+                && current_data.size() == 0)
+            {
+                break;
+            }
+
+            current_data.append(new_data);
+            memset(new_data, 0, buffer_read_size *sizeof(char));
+
+            size_t parsed = 0;
+            bool command_flag = false;
+            try
+            {
+                command_flag = parser.Parse(current_data, parsed);
+            }
+            catch(std::exception& e)
+            {
+                std::string error_msg = "Parsing error: ";
+                error_msg += e.what();
+                error_msg += end_of_msg;
+                send(client_socket, error_msg.c_str(), error_msg.size(), 0);
+                current_data = "";
+                parser.Reset();
+                continue;
+            }
+
+            current_data = current_data.substr(parsed);
+            if (!command_flag)
+            {
+                continue;
+            }
+
+
+            uint32_t arguments_data_size = 0;
+            auto command = parser.Build(arguments_data_size);
+
+            if (arguments_data_size != 0)
+            {
+                arguments_data_size += end_of_msg.size();
+            }
+
+            if (arguments_data_size > current_data.size())
+            {
+                if (recv(client_socket, new_data, (arguments_data_size) * sizeof(char), MSG_WAITALL) <= 0) {
+                    break;
+                }
+                current_data.append(new_data);
+            }
+
+            std::string argument;
+            if (arguments_data_size > end_of_msg.size()) {
+                argument = current_data.substr(0, arguments_data_size-end_of_msg.size()); // \r\n not needed
+                current_data = current_data.substr(arguments_data_size); //remove argument from received data
+            }
+
+            std::string out;
+            try
+            {
+                command->Execute(*pStorage, argument, out);
+            }
+            catch(std::exception& e) {
+                out = "SERVER ERROR ";
+                out += e.what();
+            }
+
+            out += end_of_msg;
+
+            if (send(client_socket, out.c_str(), out.size(), 0) < out.size()) {
+                break;
+            }
+
+            parser.Reset();
+        }
+
+        close(client_socket);
+    }
 
 } // namespace Blocking
 } // namespace Network

@@ -6,6 +6,7 @@
 #include <mutex>
 #include <pthread.h>
 #include <unordered_set>
+#include <afina/execute/Command.h>
 
 #include <afina/network/Server.h>
 
@@ -37,13 +38,25 @@ protected:
      */
     void RunAcceptor();
 
+    static void *RunConnectionProxy(void *proxy_args);
+
     /**
      * Methos is running for each connection
      */
-    void RunConnection();
+    void RunConnection(int con_socket);
 
 private:
+
+    class ProxyArgs{
+    public:
+        ServerImpl *server;
+        int con_socket;
+    };
+
     static void *RunAcceptorProxy(void *p);
+
+    const int buffer_read_size= 1024;
+    const std::string end_of_msg = "\r\n";
 
     // Atomic flag to notify threads when it is time to stop. Note that
     // flag must be atomic in order to safely publisj changes cross thread
@@ -57,6 +70,8 @@ private:
     // on server, permits access only from inside of accept_thread.
     // Read-only
     uint16_t max_workers;
+
+    uint16_t  workers = 0;
 
     // Port to listen for new connections, permits access only from
     // inside of accept_thread
@@ -73,6 +88,8 @@ private:
     // Threads that are processing connection data, permits
     // access only from inside of accept_thread
     std::unordered_set<pthread_t> connections;
+
+    std::deque<pthread_t> tasks;
 };
 
 } // namespace Blocking
