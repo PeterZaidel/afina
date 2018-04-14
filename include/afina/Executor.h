@@ -8,11 +8,12 @@
 #include <queue>
 #include <string>
 #include <thread>
+#include <atomic>
 
 namespace Afina {
 
 /**
- * # Thread pool
+ * Thread pool
  */
 class Executor {
     enum class State {
@@ -28,7 +29,11 @@ class Executor {
     };
 
     Executor(std::string name, int size);
-    ~Executor();
+    ~Executor() = default;;
+
+
+    void Start(std::size_t low_watermark = 3, std::size_t hight_watermark = 3, std::size_t max_queue_size = 5,
+               std::chrono::milliseconds idle_time = std::chrono::milliseconds{1000});
 
     /**
      * Signal thread pool to stop, it will stop accepting new jobs and close threads just after each become
@@ -37,6 +42,18 @@ class Executor {
      * In case if await flag is true, call won't return until all background jobs are done and all threads are stopped
      */
     void Stop(bool await = false);
+
+    void Join();
+
+
+
+    /**
+     * Signal thread pool to stop, it will stop accepting new jobs and close threads just after each become
+     * free. All enqueued jobs will be complete.
+     *
+     * In case if await flag is true, call won't return until all background jobs are done and all threads are stopped
+     */
+//    void Stop(bool await = false);
 
     /**
      * Add function to be executed on the threadpool. Method returns true in case if task has been placed
@@ -50,14 +67,29 @@ class Executor {
         auto exec = std::bind(std::forward<F>(func), std::forward<Types>(args)...);
 
         std::unique_lock<std::mutex> lock(this->mutex);
-        if (state != State::kRun) {
-            return false;
-        }
+//        if (state != State::kRun) {
+//            return false;
+//        }
 
-        // Enqueue new task
-        tasks.push_back(exec);
-        empty_condition.notify_one();
+//        // Enqueue new task
+//        std::unique_lock<std::mutex> lock(sh_res_mutex);
+//
+//        tasks.push_back(exec);
+//
+//        if(workers_perf == threads.size() && threads.size() < hight_watermark){
+//            lock.unlock();
+//            if(!initiate_thread(this, perform, true)) {
+//                Stop(true);
+//                //TODO: throw error futher (make more error msgs)
+//                return false;
+//            }
+//        }
+//        empty_condition.notify_one();
         return true;
+//
+//        tasks.push_back(exec);
+//        empty_condition.notify_one();
+//        return true;
     }
 
 private:
@@ -71,6 +103,11 @@ private:
      * Main function that all pool threads are running. It polls internal task queue and execute tasks
      */
     friend void perform(Executor *executor);
+
+    /**
+    * Mutex to protect state below from concurrent modification
+    */
+    std::mutex sh_res_mutex;
 
     /**
      * Mutex to protect state below from concurrent modification
@@ -95,7 +132,11 @@ private:
     /**
      * Flag to stop bg threads
      */
-    State state;
+    //State state;
+    std::atomic<State> state;
+
+    std::size_t low_watermark, hight_watermark, max_queue_size, workers_perf;
+    std::chrono::milliseconds idle_time;
 };
 
 } // namespace Afina
