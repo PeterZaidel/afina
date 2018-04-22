@@ -4,6 +4,20 @@
 #include <memory>
 #include <pthread.h>
 
+#include <errno.h>
+#include <fcntl.h>
+#include <netdb.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/epoll.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <protocol/Parser.h>
+#include <atomic>
+#include "Utils.h"
+
 namespace Afina {
 
 // Forward declaration, see afina/Storage.h
@@ -19,6 +33,10 @@ namespace NonBlocking {
  */
 class Worker {
 public:
+
+    Worker()
+    {}
+
     Worker(std::shared_ptr<Afina::Storage> ps);
     ~Worker();
 
@@ -44,13 +62,41 @@ public:
     void Join();
 
 protected:
+
+    class OnRunArgs{
+    public:
+        Worker* worker;
+        int server_sock;
+
+    };
+
+     static void* OnRunProxy(void* args);
+
     /**
      * Method executing by background thread
      */
-    void OnRun(void *args);
+    void* OnRun(int server_socket);
 
 private:
+
+
+    bool parse_commands(int client_socket, std::string& current_data, Afina::Protocol::Parser& parser);
+
+    void process_event(epoll_event event, int server_socket, int efd);
+
+    void process_client(int client_socket);
+
+    const int MAX_EPOLL_EVENTS = 50;
+
+    const int buffer_read_size= 1024;
+    const std::string end_of_msg = "\r\n";
+
+    std::atomic<bool> running;
+    std::atomic<int> server_socket ;
+
     pthread_t thread;
+    std::shared_ptr<Afina::Storage> pStorage;
+
 };
 
 } // namespace NonBlocking
