@@ -7,7 +7,10 @@
 namespace Afina {
 namespace Coroutine {
 
-void Engine::Store(context &ctx) {}
+void Engine::Store(context &ctx)
+{
+
+}
 
 void Engine::Restore(context &ctx) {}
 

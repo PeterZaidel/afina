@@ -32,10 +32,10 @@ Worker::~Worker() {
 
 void* Worker::OnRunProxy(void* _args) {
     std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
-    auto  args = reinterpret_cast<OnRunArgs*>(_args);
+//    auto  args = reinterpret_cast<OnRunArgs*>(_args);
 
-    Worker* worker = args->worker;
-    int server_socket = args->server_sock;
+    Worker* worker = (Worker*)_args;
+    int server_socket = worker->server_socket.load();
     try {
         worker->OnRun(server_socket);
     }catch (std::exception &ex)
@@ -58,11 +58,11 @@ void Worker::Start(int server_socket) {
 
     this->server_socket.store(server_socket);
 
-    Worker::OnRunArgs args = {this, server_socket};
+//    Worker::OnRunArgs args = {this, 0};
     running.store(true);
 
 //    int res_p = pthread_create(&this->thread, nullptr, OnRunProxy, &args);
-    if( pthread_create(&this->thread, nullptr, OnRunProxy, &args) != 0)
+    if( pthread_create(&this->thread, nullptr, OnRunProxy, this) != 0)
     {
         throw std::runtime_error("Creating worker thread failed");
     }
@@ -85,7 +85,7 @@ void Worker::Join() {
 
 bool Worker::parse_commands(int client_socket, std::string& current_data, Afina::Protocol::Parser& parser)
 {
-    auto new_data = new char[buffer_read_size];
+    auto new_data = new char[BUFFER_READ_SIZE];
     while (!current_data.empty())
     {
         size_t parsed = 0;
@@ -98,7 +98,7 @@ bool Worker::parse_commands(int client_socket, std::string& current_data, Afina:
         {
             std::string error_msg = "Parsing error: ";
             error_msg += e.what();
-            error_msg += end_of_msg;
+            error_msg += END_OF_MSG;
             send(client_socket, error_msg.c_str(), error_msg.size(), 0);
             current_data = "";
             parser.Reset();
@@ -118,20 +118,34 @@ bool Worker::parse_commands(int client_socket, std::string& current_data, Afina:
         auto command = parser.Build(arguments_data_size);
 
         if (arguments_data_size != 0) {
-            arguments_data_size += end_of_msg.size();
+            arguments_data_size += END_OF_MSG.size();
         }
 
-        if (arguments_data_size > current_data.size()) {
-            if (recv(client_socket, new_data, (arguments_data_size) * sizeof(char), MSG_WAITALL) <= 0) {
-                // не получается прочитать аргументы для команды
-                throw std::exception();
+        if (arguments_data_size > current_data.size())
+        {
+            while(true)
+            {
+                ssize_t n = recv(client_socket, new_data, (arguments_data_size) * sizeof(char), MSG_WAITALL);
+                if(n < 0 && errno == EAGAIN)
+                {
+                    continue;
+                }
+                if(n > 0 )
+                {
+                    break;
+                }
+
+                if (n <= 0) {
+                    // не получается прочитать аргументы для команды
+                    throw std::exception();
+                }
             }
             current_data.append(new_data);
         }
 
         std::string argument;
-        if (arguments_data_size > end_of_msg.size()) {
-            argument = current_data.substr(0, arguments_data_size - end_of_msg.size()); // \r\n not needed
+        if (arguments_data_size > END_OF_MSG.size()) {
+            argument = current_data.substr(0, arguments_data_size - END_OF_MSG.size()); // \r\n not needed
             current_data = current_data.substr(arguments_data_size); //remove argument from received data
         }
 
@@ -145,7 +159,7 @@ bool Worker::parse_commands(int client_socket, std::string& current_data, Afina:
             out += e.what();
         }
 
-        out += end_of_msg;
+        out += END_OF_MSG;
 
         if (send(client_socket, out.c_str(), out.size(), 0) < out.size())
         {
@@ -165,30 +179,44 @@ void Worker::process_client(int client_socket)
     Afina::Protocol::Parser parser;
 
     std::string current_data;
-    auto new_data = new char[buffer_read_size];
+    auto new_data = new char[BUFFER_READ_SIZE];
     bool parse_result = false;
 
     while (running.load())
     {
         // обработка последовательности комманд реализовать в цикле
-        if (recv(client_socket, new_data, buffer_read_size * sizeof(char), 0) <= 0)
+        ssize_t n = recv(client_socket, new_data, BUFFER_READ_SIZE * sizeof(char), 0);
+
+        if(n < 0 && errno == EAGAIN)
         {
-            break;
+            continue;
+        }
+
+        if (n <= 0)
+        {
+            std::cout << "network debug: " << __PRETTY_FUNCTION__ <<"recv()=0 close connection: "<<client_socket << std::endl;
+            close(client_socket);
+            return;
         }
 
         current_data.append(new_data);
-        memset(new_data, 0, buffer_read_size *sizeof(char));
+        memset(new_data, 0, BUFFER_READ_SIZE *sizeof(char));
 
         try
         {
+            std::cout <<"CLIENT: "<< client_socket  <<" PARSE COMMAND: "<< current_data << std::endl;
             parse_result = parse_commands(client_socket, current_data, parser);
         }
         catch (std::exception& e )
         {
-            break;
+            std::cout << "network debug: " << __PRETTY_FUNCTION__ <<" close connection: "<<client_socket << std::endl;
+            close(client_socket);
+            return;
         }
     }
-    close(client_socket);
+
+
+
 }
 
 void Worker::process_event(epoll_event event, int server_socket, int efd)
@@ -200,6 +228,7 @@ void Worker::process_event(epoll_event event, int server_socket, int efd)
     {
         /* An error has occured on this fd, or the socket is not
            ready for reading (why were we notified then?) */
+        std::cout << "network debug: " << __PRETTY_FUNCTION__ <<" events :"<< event.events<<" close connection: "<<event.data.fd << std::endl;
         close(event.data.fd);
         return;
     }
@@ -226,7 +255,7 @@ void Worker::process_event(epoll_event event, int server_socket, int efd)
                        connections. */
                     break;
                 } else {
-                    perror("accept");
+//                    perror("accept");
                     break;
                 }
             }
@@ -270,11 +299,25 @@ void Worker::process_event(epoll_event event, int server_socket, int efd)
 
 // See Worker.h
 void* Worker::OnRun(int server_socket) {
-    std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
+
+    pthread_t cur_thread = pthread_self() % 100;
+    std::cout << "network debug: " << __PRETTY_FUNCTION__ <<"Start "<<" cur thread: " <<cur_thread << std::endl;
+
+
 
 //    int s;
 
-    struct epoll_event event, events_arr[MAX_EPOLL_EVENTS];
+    struct epoll_event event{};
+    epoll_event events_arr [MAX_EPOLL_EVENTS];
+//    epoll_event * events_arr = (epoll_event*)malloc(MAX_EPOLL_EVENTS * sizeof(epoll_event));
+//    int* arrInt = new int[MAX_EPOLL_EVENTS];
+//    arrInt[0] = 10;
+//
+//    std::cout<< arrInt[0]<<std::endl;
+
+
+    std::cout << "network debug: " << __PRETTY_FUNCTION__ << " 2" <<" cur thread: " <<cur_thread << std::endl;
+
 
 //    int listen_sock;
 //    int conn_sock;
@@ -286,6 +329,8 @@ void* Worker::OnRun(int server_socket) {
         throw std::runtime_error("Failed to create epoll");
     }
 
+    std::cout << "network debug: " << __PRETTY_FUNCTION__ << " 3" <<" cur thread: " <<cur_thread << std::endl;
+
     event.events = EPOLLEXCLUSIVE | EPOLLIN | EPOLLHUP | EPOLLERR;
     event.data.fd = server_socket;
     if (epoll_ctl(efd, EPOLL_CTL_ADD, server_socket, &event) == -1)
@@ -293,27 +338,44 @@ void* Worker::OnRun(int server_socket) {
         throw std::runtime_error("epollexclusive");
     }
 
+    std::cout << "network debug: " << __PRETTY_FUNCTION__ << " 4 "<< running.load() <<" cur thread: " <<cur_thread << std::endl;
+
     while (running.load())
     {
         int n;
+
+//        std::cout << "network debug: " << __PRETTY_FUNCTION__ << " EPOLL WAIT" <<" cur thread: " <<cur_thread << std::endl;
+
         n = epoll_wait(efd, events_arr, MAX_EPOLL_EVENTS, -1);
+        if(errno == EINTR)
+        {
+            continue;
+        }
 
         std::cout<<"EPOLL "<<efd<<"  got "<<n<<" events"<<std::endl;
 
-        if (n == -1)
+        if (n == -1 )
         {
+            std::cout<< "epoll wait falied: "<< errno<< std::endl;
+            std::cout << "network debug: " << __PRETTY_FUNCTION__ << " EXCEPTION EPOLL WAIT FAILED" <<" cur thread: " <<cur_thread << std::endl;
             throw std::runtime_error("epoll_wait() failed");
         }
 
         for (int i = 0; i < n; i++)
         {
-            process_event(events_arr[i], server_socket, efd);
+
+            auto cur_event = events_arr[i];
+            std::cout << " EPOLL Process event: " << cur_event.events <<" cur thread: " <<cur_thread << std::endl;
+            process_event(cur_event, server_socket, efd);
         }
     }
 
+
+    std::cout << "network debug: " << __PRETTY_FUNCTION__ << " CLOSED" <<" cur thread: " <<cur_thread << std::endl;
     //When no longer required, the file descriptor
     //returned by epoll_create() should be closed by using close(2).
     close(efd);
+//    delete[] events_arr;
 
 
 

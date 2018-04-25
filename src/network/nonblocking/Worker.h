@@ -18,6 +18,11 @@
 #include <atomic>
 #include "Utils.h"
 
+#define  MAX_EPOLL_EVENTS 50
+
+#define  BUFFER_READ_SIZE 1024
+//#define  END_OF_MSG  "\r\n"
+
 namespace Afina {
 
 // Forward declaration, see afina/Storage.h
@@ -63,6 +68,8 @@ public:
 
 protected:
 
+    const std::string END_OF_MSG  = "\r\n";
+
     class OnRunArgs{
     public:
         Worker* worker;
@@ -86,10 +93,7 @@ private:
 
     void process_client(int client_socket);
 
-    const int MAX_EPOLL_EVENTS = 50;
 
-    const int buffer_read_size= 1024;
-    const std::string end_of_msg = "\r\n";
 
     std::atomic<bool> running;
     std::atomic<int> server_socket ;
