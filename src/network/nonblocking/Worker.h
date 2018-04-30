@@ -16,6 +16,8 @@
 #include <unistd.h>
 #include <protocol/Parser.h>
 #include <atomic>
+#include <unordered_map>
+#include <network/Client.h>
 #include "Utils.h"
 
 #define  MAX_EPOLL_EVENTS 50
@@ -87,13 +89,13 @@ protected:
 private:
 
 
-    bool parse_commands(int client_socket, std::string& current_data, Afina::Protocol::Parser& parser);
+   // bool parse_commands(int client_socket, std::string& current_data, Afina::Protocol::Parser& parser);
 
     void process_event(epoll_event event, int server_socket, int efd);
 
-    void process_client(int client_socket);
+   // void process_client(int client_socket);
 
-
+    std::unordered_map<int, std::unique_ptr<Client> > clients_map;
 
     std::atomic<bool> running;
     std::atomic<int> server_socket ;

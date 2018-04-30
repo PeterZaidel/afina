@@ -83,141 +83,141 @@ void Worker::Join() {
 
 
 
-bool Worker::parse_commands(int client_socket, std::string& current_data, Afina::Protocol::Parser& parser)
-{
-    auto new_data = new char[BUFFER_READ_SIZE];
-    while (!current_data.empty())
-    {
-        size_t parsed = 0;
-        bool command_flag = false;
-        try
-        {
-            command_flag = parser.Parse(current_data, parsed);
-        }
-        catch (std::exception &e)
-        {
-            std::string error_msg = "Parsing error: ";
-            error_msg += e.what();
-            error_msg += END_OF_MSG;
-            send(client_socket, error_msg.c_str(), error_msg.size(), 0);
-            current_data = "";
-            parser.Reset();
-
-            // не получается распарсить команду, необходимо прочитать больше данных
-            return false;
-        }
-
-        current_data = current_data.substr(parsed);
-        if (!command_flag) {
-            //не смогл прочитать команду до конца, читаем дальше
-            return false;
-        }
-
-
-        uint32_t arguments_data_size = 0;
-        auto command = parser.Build(arguments_data_size);
-
-        if (arguments_data_size != 0) {
-            arguments_data_size += END_OF_MSG.size();
-        }
-
-        if (arguments_data_size > current_data.size())
-        {
-            while(true)
-            {
-                ssize_t n = recv(client_socket, new_data, (arguments_data_size) * sizeof(char), MSG_WAITALL);
-                if(n < 0 && errno == EAGAIN)
-                {
-                    continue;
-                }
-                if(n > 0 )
-                {
-                    break;
-                }
-
-                if (n <= 0) {
-                    // не получается прочитать аргументы для команды
-                    throw std::exception();
-                }
-            }
-            current_data.append(new_data);
-        }
-
-        std::string argument;
-        if (arguments_data_size > END_OF_MSG.size()) {
-            argument = current_data.substr(0, arguments_data_size - END_OF_MSG.size()); // \r\n not needed
-            current_data = current_data.substr(arguments_data_size); //remove argument from received data
-        }
-
-        std::string out;
-        try
-        {
-            command->Execute(*pStorage, argument, out);
-        }
-        catch (std::exception &e) {
-            out = "SERVER ERROR ";
-            out += e.what();
-        }
-
-        out += END_OF_MSG;
-
-        if (send(client_socket, out.c_str(), out.size(), 0) < out.size())
-        {
-            // не получается писать в сокет, закрываем соединение
-            throw std::exception();
-        }
-
-        parser.Reset();
-
-    }
-    return true;
-}
-
-void Worker::process_client(int client_socket)
-{
-    std::cout<< "RunConnection"<<std::endl;
-    Afina::Protocol::Parser parser;
-
-    std::string current_data;
-    auto new_data = new char[BUFFER_READ_SIZE];
-    bool parse_result = false;
-
-    while (running.load())
-    {
-        // обработка последовательности комманд реализовать в цикле
-        ssize_t n = recv(client_socket, new_data, BUFFER_READ_SIZE * sizeof(char), 0);
-
-        if(n < 0 && errno == EAGAIN)
-        {
-            continue;
-        }
-
-        if (n <= 0)
-        {
-            std::cout << "network debug: " << __PRETTY_FUNCTION__ <<"recv()=0 close connection: "<<client_socket << std::endl;
-            close(client_socket);
-            return;
-        }
-
-        current_data.append(new_data);
-        memset(new_data, 0, BUFFER_READ_SIZE *sizeof(char));
-
-        try
-        {
-            std::cout <<"CLIENT: "<< client_socket  <<" PARSE COMMAND: "<< current_data << std::endl;
-            parse_result = parse_commands(client_socket, current_data, parser);
-        }
-        catch (std::exception& e )
-        {
-            std::cout << "network debug: " << __PRETTY_FUNCTION__ <<" close connection: "<<client_socket << std::endl;
-            close(client_socket);
-            return;
-        }
-    }
-
-
-
-}
+//bool Worker::parse_commands(int client_socket, std::string& current_data, Afina::Protocol::Parser& parser)
+//{
+//    auto new_data = new char[BUFFER_READ_SIZE];
+//    while (!current_data.empty())
+//    {
+//        size_t parsed = 0;
+//        bool command_flag = false;
+//        try
+//        {
+//            command_flag = parser.Parse(current_data, parsed);
+//        }
+//        catch (std::exception &e)
+//        {
+//            std::string error_msg = "Parsing error: ";
+//            error_msg += e.what();
+//            error_msg += END_OF_MSG;
+//            send(client_socket, error_msg.c_str(), error_msg.size(), 0);
+//            current_data = "";
+//            parser.Reset();
+//
+//            // не получается распарсить команду, необходимо прочитать больше данных
+//            return false;
+//        }
+//
+//        current_data = current_data.substr(parsed);
+//        if (!command_flag) {
+//            //не смогл прочитать команду до конца, читаем дальше
+//            return false;
+//        }
+//
+//
+//        uint32_t arguments_data_size = 0;
+//        auto command = parser.Build(arguments_data_size);
+//
+//        if (arguments_data_size != 0) {
+//            arguments_data_size += END_OF_MSG.size();
+//        }
+//
+//        if (arguments_data_size > current_data.size())
+//        {
+//            while(true)
+//            {
+//                ssize_t n = recv(client_socket, new_data, (arguments_data_size) * sizeof(char), MSG_WAITALL);
+//                if(n < 0 && errno == EAGAIN)
+//                {
+//                    continue;
+//                }
+//                if(n > 0 )
+//                {
+//                    break;
+//                }
+//
+//                if (n <= 0) {
+//                    // не получается прочитать аргументы для команды
+//                    throw std::exception();
+//                }
+//            }
+//            current_data.append(new_data);
+//        }
+//
+//        std::string argument;
+//        if (arguments_data_size > END_OF_MSG.size()) {
+//            argument = current_data.substr(0, arguments_data_size - END_OF_MSG.size()); // \r\n not needed
+//            current_data = current_data.substr(arguments_data_size); //remove argument from received data
+//        }
+//
+//        std::string out;
+//        try
+//        {
+//            command->Execute(*pStorage, argument, out);
+//        }
+//        catch (std::exception &e) {
+//            out = "SERVER ERROR ";
+//            out += e.what();
+//        }
+//
+//        out += END_OF_MSG;
+//
+//        if (send(client_socket, out.c_str(), out.size(), 0) < out.size())
+//        {
+//            // не получается писать в сокет, закрываем соединение
+//            throw std::exception();
+//        }
+//
+//        parser.Reset();
+//
+//    }
+//    return true;
+//}
+//
+//void Worker::process_client(int client_socket)
+//{
+//    std::cout<< "RunConnection"<<std::endl;
+//    Afina::Protocol::Parser parser;
+//
+//    std::string current_data;
+//    auto new_data = new char[BUFFER_READ_SIZE];
+//    bool parse_result = false;
+//
+//    while (running.load())
+//    {
+//        // обработка последовательности комманд реализовать в цикле
+//        ssize_t n = recv(client_socket, new_data, BUFFER_READ_SIZE * sizeof(char), 0);
+//
+//        if(n < 0 && errno == EAGAIN)
+//        {
+//            continue;
+//        }
+//
+//        if (n <= 0)
+//        {
+//            std::cout << "network debug: " << __PRETTY_FUNCTION__ <<"recv()=0 close connection: "<<client_socket << std::endl;
+//            close(client_socket);
+//            return;
+//        }
+//
+//        current_data.append(new_data);
+//        memset(new_data, 0, BUFFER_READ_SIZE *sizeof(char));
+//
+//        try
+//        {
+//            std::cout <<"CLIENT: "<< client_socket  <<" PARSE COMMAND: "<< current_data << std::endl;
+//            parse_result = parse_commands(client_socket, current_data, parser);
+//        }
+//        catch (std::exception& e )
+//        {
+//            std::cout << "network debug: " << __PRETTY_FUNCTION__ <<" close connection: "<<client_socket << std::endl;
+//            close(client_socket);
+//            return;
+//        }
+//    }
+//
+//
+//
+//}
 
 void Worker::process_event(epoll_event event, int server_socket, int efd)
 {
@@ -228,7 +228,7 @@ void Worker::process_event(epoll_event event, int server_socket, int efd)
     {
         /* An error has occured on this fd, or the socket is not
            ready for reading (why were we notified then?) */
-        std::cout << "network debug: " << __PRETTY_FUNCTION__ <<" events :"<< event.events<<" close connection: "<<event.data.fd << std::endl;
+        //std::cout << "network debug: " << __PRETTY_FUNCTION__ <<" events :"<< event.events<<" close connection: "<<event.data.fd << std::endl;
         close(event.data.fd);
         return;
     }
@@ -244,7 +244,7 @@ void Worker::process_event(epoll_event event, int server_socket, int efd)
 
             in_len = sizeof in_addr;
 
-            std::cout<<"EPOLL "<<efd<< " accept client"<<std::endl;
+            //std::cout<<"EPOLL "<<efd<< " accept client"<<std::endl;
 
             infd = accept(server_socket, &in_addr, &in_len);
             if (infd == -1)
@@ -291,9 +291,29 @@ void Worker::process_event(epoll_event event, int server_socket, int efd)
 
         int client_sock = event.data.fd;
 
-        std::cout<<"EPOLL "<<efd<< " process client "<<client_sock<<std::endl;
+        //std::cout<<"EPOLL "<<efd<< " process client "<<client_sock<<std::endl;
 
-        process_client(client_sock);
+        //process_client(client_sock);
+        auto entry_iter = clients_map.find(client_sock);
+        if( entry_iter != clients_map.end())
+        {
+            entry_iter->second->process_client();
+            if(entry_iter->second->getState() == Client::CLientState::Closed)
+            {
+                clients_map.erase(entry_iter->first);
+            }
+        }
+        else
+        {
+            auto client_ptr = std::unique_ptr<Client>(new Client(client_sock, pStorage));
+            client_ptr->process_client();
+
+            if(client_ptr->getState() != Client::CLientState::Closed)
+            {
+                clients_map[client_sock] = std::move(client_ptr);
+            }
+        }
+
     }
 }
 
@@ -352,7 +372,7 @@ void* Worker::OnRun(int server_socket) {
             continue;
         }
 
-        std::cout<<"EPOLL "<<efd<<"  got "<<n<<" events"<<std::endl;
+       // std::cout<<"EPOLL "<<efd<<"  got "<<n<<" events"<<std::endl;
 
         if (n == -1 )
         {
@@ -365,7 +385,7 @@ void* Worker::OnRun(int server_socket) {
         {
 
             auto cur_event = events_arr[i];
-            std::cout << " EPOLL Process event: " << cur_event.events <<" cur thread: " <<cur_thread << std::endl;
+            //std::cout << " EPOLL Process event: " << cur_event.events <<" cur thread: " <<cur_thread << std::endl;
             process_event(cur_event, server_socket, efd);
         }
     }

@@ -770,12 +770,12 @@ ACTION_TEMPLATE(InvokeArgument,
 $range i 0..n
 $for i [[
 $range j 0..i-1
-$var ps = [[$for j, [[p$j]]]]
+$var pStorage = [[$for j, [[p$j]]]]
 
 ACTION_TEMPLATE(ReturnNew,
                 HAS_1_TEMPLATE_PARAMS(typename, T),
-                AND_$i[[]]_VALUE_PARAMS($ps)) {
-  return new T($ps);
+                AND_$i[[]]_VALUE_PARAMS($pStorage)) {
+  return new T($pStorage);
 }
 
 ]]
