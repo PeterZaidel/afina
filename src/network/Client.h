@@ -181,7 +181,6 @@ private:
 
                     parser.Reset();
                     state = CLientState ::Open;
-                    return;
                 }
             }
         }

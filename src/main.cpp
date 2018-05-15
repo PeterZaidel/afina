@@ -78,7 +78,7 @@ int main(int argc, char **argv) {
     }
 
     // Build  & start network layer
-    std::string network_type = "uv";
+    std::string network_type = "nonblocking";
     if (options.count("network") > 0) {
         network_type = options["network"].as<std::string>();
     }

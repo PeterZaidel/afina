@@ -367,7 +367,7 @@ void* Worker::OnRun(int server_socket) {
 //        std::cout << "network debug: " << __PRETTY_FUNCTION__ << " EPOLL WAIT" <<" cur thread: " <<cur_thread << std::endl;
 
         n = epoll_wait(efd, events_arr, MAX_EPOLL_EVENTS, -1);
-        if(errno == EINTR)
+        if(n<= 0 && errno == EINTR)
         {
             continue;
         }
